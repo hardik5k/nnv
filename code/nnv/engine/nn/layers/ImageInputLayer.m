@@ -116,12 +116,10 @@ classdef ImageInputLayer < handle
                 image = in_image;
             elseif strcmp(obj.Normalization, 'zerocenter')
                 image = in_image.affineMap([], -obj.Mean);
+            elseif strcmp(obj.Normalization, 'rescale-zero-one')
+                image = in_image.affineMap(1 / (obj.Max - obj.Min), -obj.Min / (obj.Max - obj.Min));
             elseif strcmp(obj.Normalization, 'zscore')
-                image = in_image.affineMap([], -obj.Mean);
-                layer_std = obj.StandardDeviation;
-                for nc = 1:image.numChannel
-                    image.V(:,:,nc,:) = image.V(:,:,nc,:)/layer_std(nc);
-                end
+                image = in_image.affineMap(1 / obj.StandardDeviation, -obj.Mean / obj.StandardDeviation);
             else
                 error('The normalization method is not supported yet.')
             end

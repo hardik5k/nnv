@@ -386,19 +386,131 @@ classdef NN < handle
             rb = verify_specification(R, target);
 
         end % end check robust
+
+        function rb = checkMisclassification(obj, R, target)
+            n = size(target, 1);
+            rb = 1;
+            for i=1:n
+                scale = target(i, 1);
+                gridY = target(i, 2);
+                gridX = target(i, 3);
+                anchorIdx = target(i, 4);
+                classIdx = target(i, 5);
+                outputSet = R{scale}.extractFromImageStar(gridY, gridX, anchorIdx, 6); % 6 means classes
+                rb = obj.checkRobust(outputSet, classIdx);
+
+                if (rb == 0)
+                    break;
+                end
+            end
+                
+                 
+            
+        end
+
+        function is_overlap = check_overlap(obj, R, target, alpha, beta)
+            V = reshape(R.V, 4, 2) * 300; % Ensures it's [4×2]
+
+            % Extract actual bounding box coordinates
+            x1 = target(1, 1);
+            y1 = target(1, 2);
+            x2 = target(1, 3);
+            y2 = target(1, 4);
+
+            % Extract predicted bounding box with lower and upper bounds
+            x1p = [V(1, 1) + R.pred_lb * V(1, 2); V(1, 1) + R.pred_ub * V(1, 2)];
+            y1p = [V(2, 1) + R.pred_lb * V(2, 2); V(2, 1) + R.pred_ub * V(2, 2)];
+            x2p = [V(3, 1) + R.pred_lb * V(3, 2); V(3, 1) + R.pred_ub * V(3, 2)];
+            y2p = [V(4, 1) + R.pred_lb * V(4, 2); V(4, 1) + R.pred_ub * V(4, 2)];
+
+            % Compute width and height of the actual bounding box
+            W_actual = x2 - x1;
+            H_actual = y2 - y1;
+
+            % Minimum required overlap in width and height
+            W_min = alpha * W_actual;
+            H_min = beta * H_actual;
+
+            % Iterate over all 4 possible bounding box combinations
+            is_overlap = 1;
+
+            % Iterate over all 4 possible bounding box combinations
+            for j = 1:2
+                for k = 1:2
+                    % Compute intersection width and height for each bound combination
+                    W_overlap = max(0, min(x2, x2p(k)) - max(x1, x1p(j)));
+                    H_overlap = max(0, min(y2, y2p(k)) - max(y1, y1p(j)));
+
+                    % If any combination fails, set flag to false and return
+                    if (W_overlap < W_min) || (H_overlap < H_min)
+                        is_overlap = 0;
+                        return;
+                    end
+                end
+            end
+        end
+
+            
+
+        function rb = checkMislocalization(obj, R, target)
+
+            rb = 1;
+
+            % epsilon_x = 0.0002;
+            % epsilon_y = 1;
+            % epsilon_w = 1;
+            % epsilon_h = 1;
+            % 
+            % alpha = 0.6;
+            % beta = 0.6;
+            % 
+            % n = size(R, 2);
+            % for i=1:n
+            % 
+            %     rb = rb & obj.check_overlap(R(i), target, alpha, beta);
+
+                % V = reshape(R(i).V, 4, 2) * 300; % Ensures it's [4×2]
+                % 
+                % Rx = Star(V(1, 1) + R(i).pred_lb * V(1, 2), V(1, 1) + R(i).pred_ub * V(1, 2));
+                % Ry = Star(V(2, 1) + R(i).pred_lb * V(2, 2), V(2, 1) + R(i).pred_ub * V(2, 2));
+                % 
+                % 
+                % x = target(1, 1);
+                % y = target(1, 2);
+                % 
+                % rbx = verify_values(Rx, x, epsilon_x);
+                % rby = verify_values(Ry, y, epsilon_y);
+                % 
+                % rb = rb & rbx & rby;
+
+
+            % end
+        end
         
         % Verify robutness of a NN given an input set and target (id or HalfSpace)
         function result = verify_robustness(obj, inputSet, reachOptions, target)
             % Compute reachable set
             R = obj.reach(inputSet, reachOptions);
+
             % Check robustness
             result = obj.checkRobust(R, target);
-            % Modify in case of unknown and exact
-            if result == 2
+
+            %Modify in case of unknown and exact
+             if result == 2
                 if contains(obj.reachMethod, "exact")
                     result = 0;
                 end
-            end
+             end
+        end
+
+
+        % Verify robutness of a NN given an input set and target (id or HalfSpace)
+        function result = verify_robustness_regression(obj, inputSet, reachOptions, target)
+            % Compute reachable set
+            R = obj.reach(inputSet, reachOptions);
+
+            % Check robustness
+            result = obj.checkMislocalization(R, target);
         end
         
         % Classify input set (one or more label_id?)
@@ -1239,7 +1351,7 @@ classdef NN < handle
         end
 
         % reach NN based on connections table (test it)
-        function outSet = reach_withConns(obj, inSet, varargin)
+        function outset = reach_withConns(obj, inSet, varargin)
             % Initialize variables to store reachable sets and computation time
             obj.reachSet = cell(1, obj.numLayers);
             obj.reachTime = zeros(1, obj.numLayers);
@@ -1262,7 +1374,7 @@ classdef NN < handle
                 % ensure we get just the name and not specific properties
                 source = split(source, '/');
                 source = source{1};
-%                 fprintf('\n layer reachability: %s', source);
+                % fprintf('\n layer reachability: %s', source);
                 source_indx = obj.name2indx(source); % indx in Layers array
                 
                 % 2) Get input to layer
@@ -1275,7 +1387,7 @@ classdef NN < handle
                 % ensure layer has not been eexcuted yet
                 if exec_len >= source_indx && isempty(obj.reachSet{source_indx})
                     if strcmp(obj.dis_opt, 'display')
-                        fprintf('\nPerforming analysis for Layer %d (%s)...', i-1, source);
+                        % fprintf('\nPerforming analysis for Layer %d (%s)...', i-1, source);
                     end
                     t = tic;
                     if strcmp(reachType, 'sequence')
@@ -1292,6 +1404,7 @@ classdef NN < handle
                 dest = split(dest, '/');
                 dest_name = dest{1};
                 dest_indx = obj.name2indx(dest_name); % indx in Layers array
+                fprintf('%d %d %d', outSet.height, outSet.width, outSet.numChannel)
                 % check if there source has multiple inputs (concat layer, unpooling ...)
                 if length(dest) > 1
                     % unpooling option
@@ -1332,6 +1445,15 @@ classdef NN < handle
                             error("Destination not valid ("+string(obj.Connections.Destination(i))+")");
                         end
                         obj.input_sets{dest_indx}{input_num} = outSet;
+                    elseif isa(obj.Layers{dest_indx}, 'ResizeLayer')
+                        destP = dest{2};
+                        if startsWith(destP, 'in')
+                            obj.input_sets{dest_indx}{2} = outSet;
+                        elseif startsWith(destP, 'ref')
+                            obj.input_sets{dest_indx}{1} = outSet;
+                        else
+                            error("Destination not valid ("+string(obj.Connections.Destination(i))+")");
+                        end
                     else
                         error("Destination not valid ("+string(obj.Connections.Destination(i))+")");
                     end
@@ -1342,16 +1464,23 @@ classdef NN < handle
             % Check if last layer is executed (default is last layer is not executed, but in the 
             % case of the PixelClassificationLayer this is necessary)
             % Assume last layer in array is the output layer
-            if isempty(obj.reachSet{end})
-                inSet = obj.reachSet{end-1};
-                if strcmp(reachType, 'sequence')
-                    outSet = obj.Layers{end}.reachSequence(inSet, obj.reachMethod, obj.reachOption, obj.relaxFactor, obj.dis_opt, obj.lp_solver);
-                else
-                    outSet = obj.Layers{end}.reach(inSet, obj.reachMethod, obj.reachOption, obj.relaxFactor, obj.dis_opt, obj.lp_solver);
+
+            for i = 1:length(obj.reachSet)
+                if isempty(obj.reachSet{i})
+                    inSet = obj.reachSet{i - 1};
+                    if strcmp(reachType, 'sequence')
+                        outSet = obj.Layers{i}.reachSequence(inSet, obj.reachMethod, obj.reachOption, obj.relaxFactor, obj.dis_opt, obj.lp_solver);
+                    else
+                        outSet = obj.Layers{i}.reach(inSet, obj.reachMethod, obj.reachOption, obj.relaxFactor, obj.dis_opt, obj.lp_solver);
+                    end
+                    obj.reachSet{i} = outSet;
                 end
-                obj.reachSet{end} = outSet;
             end
+            outset = obj.reachSet{end};
+            % outset = { obj.reachSet{35}, obj.reachSet{44} }; 
+            % outset = { obj.reachSet{199}, obj.reachSet{223}, obj.reachSet{247} }; 
         end
+        
         
     end % end helper functions
     

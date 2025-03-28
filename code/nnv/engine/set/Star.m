@@ -517,6 +517,24 @@ classdef Star
             end
             
         end
+
+        function S = intersectEpsilonBound(obj, x, epsilon)
+             
+            C1 = obj.V(:, 2);
+            d1 = x + epsilon - obj.V(:, 1);
+            d2 = -x + epsilon + obj.V(:, 1);
+            
+            new_C = vertcat(obj.C, C1, -C1);
+            new_d = vertcat(obj.d, d1, d2);
+            
+            S = Star(obj.V, new_C, new_d, obj.predicate_lb, obj.predicate_ub);
+            
+            if S.isEmptySet
+                S = [];
+            end
+            
+        end
+        
         
     end
 
@@ -1135,9 +1153,9 @@ classdef Star
             b = obj.d;
             Ae = obj.V(:, 2:obj.nVar+1);
             be = s - obj.V(:,1);
-
-            P = Polyhedron('A', double(A), 'b', double(b), 'Ae', double(Ae), 'be', double(be),...
-                'lb', double(obj.predicate_lb), 'ub', double(obj.predicate_ub));
+            
+            P = Polyhedron('A', A, 'b', b, 'Ae', Ae, 'be', be, 'lb', obj.predicate_lb, 'ub', obj.predicate_ub);
+            
             bool = ~P.isEmptySet;
                      
         end
